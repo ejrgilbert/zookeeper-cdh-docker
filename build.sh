@@ -1,53 +1,48 @@
 #!/bin/bash
 
-# NOTE: REGISTRY_URL is used to specify where to push the built images...must have trailing '/'
-source ./util/logging.sh
+THIS_DIR=$(dirname "$(realpath "$0")")
 
+# TODO create gitlab job
+# Want stack for these datawave versions:
+# - 2.10.0-SNAPSHOT
+# - 2.8.8
+# - 2.8.8-hadoop3
+# TODO build images for the following versions:
+# - 3.4.5-cdh5.9.1
+# - 3.4.5-cdh5.16.2
+# - 3.4.5-cdh6.3.1
+
+
+# NOTE: REGISTRY_URL is used to specify where to push the built images...must have trailing '/'
+source "${THIS_DIR}/util/logging.sh"
+
+ZOOKEEPER_VERSION="3.4.5"
 CDH_VERSION="5.9.1"
 
 ZOOKEEPER="zookeeper"
 HELP="help"
 
-REPO_FILE_BASE="./${ZOOKEEPER}/cloudera-cdh5.repo"
-REPO_FILE_DST="./${ZOOKEEPER}/resources/cloudera-cdh5.repo"
-CDH_BASE_URL="baseurl=https://archive.cloudera.com/cdh5/redhat/7/x86_64/cdh/"
-
 header "Docker Build Utility"
 
 function usage() {
-    echo "Usage: $0 [-v ver1 ver2 ...] [-p] -- (${ZOOKEEPER} | ${HELP}"
-    echo -e "\t${ZOOKEEPER} - if you would like to build the zookeeper docker image"
+    echo "Usage: $0 [-v|--version ver1 ver2 ...] [-p|--push] [${HELP}]"
     echo -e "\t${HELP} - to see this message"
     echo "Options:"
-    echo -e "\t-c - Override the default CDH_VERSION (${CDH_VERSION})...this logic will need to be changed if NOT a chd5 release"
     echo -e "\t-v - What versions to tag the images as"
-    echo -e "\t-p - Pass this option if you want to push to the REGISTRY...MUST HAVE -v IF USING THIS OPTION"
-    note "Make sure you  pass the '--' if you use any of the above options (-v parsing causes this)"
+    echo -e "\t-p - Pass this option if you want to push to the REGISTRY"
     exit 1
 }
 
-function cleanup() {
-    rm "${REPO_FILE_DST}"
-}
-
 function build_failed() {
-    cleanup
     error_exit "Build of $1 failed"
-}
-
-function configure_repo() {
-    cp "${REPO_FILE_BASE}" "${REPO_FILE_DST}"
-    echo "${CDH_BASE_URL}/${CDH_VERSION}" >>${REPO_FILE_DST}
 }
 
 function build_zookeeper() {
     info "Building ${ZOOKEEPER} docker image"
-    configure_repo
 
-    if ! docker build -t ${ZOOKEEPER} ./${ZOOKEEPER}; then
+    if ! docker build -t ${ZOOKEEPER} "${THIS_DIR}/${ZOOKEEPER}"; then
         build_failed ${ZOOKEEPER}
     fi
-    cleanup
     success "Completed building ${ZOOKEEPER} docker image"
 }
 
@@ -67,48 +62,43 @@ function push_images() {
     success "Completed pushing docker images"
 }
 
-while getopts 'c:v:p' opt
-do
-    case "${opt}" in
-        c )
-            CDH_VERSION="${OPTARG}"
-            ;;
-        v )
-            IMAGE_VERSIONS+=("$OPTARG")
-            while [ "$OPTIND" -le "$#" ] && [ "${!OPTIND:0:1}" != "-" ]; do
-                IMAGE_VERSIONS+=("${!OPTIND}")
-                OPTIND="$(( OPTIND + 1 ))"
+if [[ $* =~ ${HELP} ]]; then
+    usage
+fi
+
+# From: https://medium.com/@Drew_Stokes/bash-argument-parsing-54f3b81a6a8f
+while (( "$#" )); do
+    case "$1" in
+        -v|--version )
+            if [ -z "$2" ]; then
+                error_exit "Argument required for $1"
+            fi
+            shift 1
+
+            while [ -n "$1" ] && [ "${1:0:1}" != "-" ]; do
+                IMAGE_VERSIONS+=("$1")
+                shift 1
             done
             ;;
-        p )
+        -p|--push )
             PUSH="true"
             ;;
-        ? )
+        -? )
             usage
             ;;
-        * )
-            usage
+        -*|--*=) # unsupported flags
+            error_exit "Unsupported flag $1"
+            ;;
+        *)
+            error_exit "Unsupported positional argument: $1"
             ;;
     esac
 done
-shift $(( OPTIND - 1 ))
 
-if [[ "${PUSH}" == "true" && -z ${IMAGE_VERSIONS[*]} ]]; then
-    error_exit "The push (-p) option must be paired with tag versions (-v)"
-fi
+build_zookeeper
 
-case $1 in
-    ${ZOOKEEPER} )
-        build_zookeeper
-        ;;
-    ${HELP} )
-        usage
-        ;;
-    * )
-        usage
-        ;;
-esac
-
+# Set one image version as the installed Accumulo version
+IMAGE_VERSIONS+=( "${ZOOKEEPER_VERSION}-cdh${CDH_VERSION}" )
 if [[ -n ${IMAGE_VERSIONS[*]} ]]; then
     tag_images
 fi

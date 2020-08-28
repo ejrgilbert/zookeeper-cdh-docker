@@ -44,7 +44,7 @@ function note() {
 
 function error() {
     local _msg=${1:-"An error occurred"}
-    printf "${red}${cross_mark} [ERROR] %s${reset}\n" "${_msg}"
+    printf "${red}${cross_mark} [ERROR] %s${reset}\n" "${_msg}" >&2
 }
 
 function error_exit() {
