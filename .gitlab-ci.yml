@@ -7,6 +7,7 @@ image: docker:dind
 verify_build:
   stage: test
   script:
+    - chmod +x ${CI_PROJECT_DIR}/build.sh
     - ${CI_PROJECT_DIR}/build.sh
 
 deploy:
@@ -15,5 +16,6 @@ deploy:
     - master
     - tags
   script:
+    - chmod +x ${CI_PROJECT_DIR}/build.sh
     - echo "Building the docker images, tagging as '${CI_COMMIT_TAG}' and 'latest', and pushing to registry..."
     - ${CI_PROJECT_DIR}/build.sh -v "${CI_COMMIT_TAG}" -v "latest" -p
